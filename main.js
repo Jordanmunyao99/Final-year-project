@@ -34,6 +34,7 @@ const dom = {
   amountInput:           document.getElementById("amountInput"),
   categoryInput:         document.getElementById("categoryInput"),
   dateInput:             document.getElementById("dateInput"),
+  typeInput:             document.getElementById("typeInput"),
   titleError:            document.getElementById("titleError"),
   amountError:           document.getElementById("amountError"),
   categoryError:         document.getElementById("categoryError"),
@@ -98,16 +99,28 @@ const formatCurrency = (n) =>
 const formatDate = (s) =>
   new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 
-const getPeriod = (dateStr) => {
+function getPeriod(dateStr) {
   const d = new Date(dateStr);
+  if (isNaN(d.getTime())) {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  }
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
+}
 
-const prevPeriod = (period) => {
+function getMonthsForYear(year) {
+  const y = isNaN(Number(year)) ? new Date().getFullYear() : Number(year);
+  return Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
+}
+
+function prevPeriod(period) {
+  if (!period || typeof period !== "string" || !period.includes("-")) {
+    period = getPeriod(new Date());
+  }
   const [y, m] = period.split("-").map(Number);
   const d = new Date(y, m - 2, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
+}
 
 const periodLabel = (period) => {
   const [y, m] = period.split("-").map(Number);
@@ -220,7 +233,13 @@ const db = {
     const data = await res.json();
     const budgets = {};
     data.forEach(item => {
-      budgets[item.period] = item.config;
+      let cfg = item.config;
+      if (typeof cfg === "string") {
+        try { cfg = JSON.parse(cfg); } catch (e) { console.error(e); }
+      }
+      if (item.period && item.period.includes("-") && !item.period.includes("NaN")) {
+        budgets[item.period] = cfg;
+      }
     });
     return budgets;
   },
@@ -263,7 +282,15 @@ const db = {
 
 const loadFromLocalStorage = async () => {
   try {
-    state.transactions = await db.getTransactions();
+    const data = await db.getTransactions() || [];
+    state.transactions = data.filter((tx) => {
+      if (!tx || typeof tx !== "object") return false;
+      if (!tx.id) return false;
+      const d = new Date(tx.date);
+      if (isNaN(d.getTime())) return false;
+      if (isNaN(Number(tx.amount))) return false;
+      return true;
+    });
   } catch (e) {
     console.error("Failed to load transactions:", e);
     state.transactions = [];
@@ -272,7 +299,14 @@ const loadFromLocalStorage = async () => {
 
 const loadBudgets = async () => {
   try {
-    state.budgets = await db.getBudgets();
+    const rawBudgets = await db.getBudgets() || {};
+    const sanitized = {};
+    Object.keys(rawBudgets).forEach((k) => {
+      if (k && k.includes("-") && !k.includes("NaN")) {
+        sanitized[k] = rawBudgets[k];
+      }
+    });
+    state.budgets = sanitized;
   } catch (e) {
     console.error("Failed to load budgets:", e);
     state.budgets = {};
@@ -356,8 +390,11 @@ const addTransaction = async () => {
     showToast("Only admins can edit transactions.", "error"); return;
   }
   if (!validateForm()) { showToast("Please fix the highlighted fields.", "error"); return; }
-  const title = dom.titleInput.value.trim(), amount = Number(dom.amountInput.value),
-        category = dom.categoryInput.value, date = dom.dateInput.value;
+  const title = dom.titleInput.value.trim();
+  const amountRaw = Number(dom.amountInput.value);
+  const type = dom.typeInput.value;
+  const amount = type === "expense" ? -Math.abs(amountRaw) : Math.abs(amountRaw);
+  const category = dom.categoryInput.value, date = dom.dateInput.value;
   try {
     if (state.editingId) {
       const updates = { title, amount, category, date };
@@ -381,7 +418,9 @@ const addTransaction = async () => {
 const startEditing = (id) => {
   if (!can.editTransaction()) { showToast("Only admins can edit transactions.", "error"); return; }
   const tx = state.transactions.find((t) => t.id === id); if (!tx) return;
-  dom.titleInput.value = tx.title; dom.amountInput.value = tx.amount;
+  dom.titleInput.value = tx.title;
+  dom.typeInput.value = tx.amount < 0 ? "expense" : "income";
+  dom.amountInput.value = Math.abs(tx.amount);
   dom.categoryInput.value = tx.category; dom.dateInput.value = tx.date;
   state.editingId = id; dom.submitBtn.textContent = "Save Changes";
   dom.submitBtn.dataset.editing = "true";
@@ -425,10 +464,14 @@ const computeSurplus = (limit, expenses, income = 0) => Math.max(0, limit - expe
 const getAllPeriods = () => {
   const set = new Set(state.transactions.map((tx) => getPeriod(tx.date)));
   Object.keys(state.budgets).forEach((p) => set.add(p));
-  // Always include all 12 months of the current year so the selector is never empty
-  const currentYear = String(new Date().getFullYear());
-  getMonthsForYear(currentYear).forEach((p) => set.add(p));
-  return [...set].sort((a, b) => (a > b ? -1 : 1));
+  
+  // Include previous, current, and next year's 12 months by default
+  const currentYear = new Date().getFullYear();
+  getMonthsForYear(String(currentYear - 1)).forEach((p) => set.add(p));
+  getMonthsForYear(String(currentYear)).forEach((p) => set.add(p));
+  getMonthsForYear(String(currentYear + 1)).forEach((p) => set.add(p));
+  
+  return [...set].filter((p) => p && p.includes("-") && !p.includes("NaN")).sort((a, b) => (a > b ? -1 : 1));
 };
 
 // All unique years across periods
@@ -437,9 +480,7 @@ const getAllYears = () => {
   return [...years].sort((a, b) => b - a); // newest first
 };
 
-// All 12 months for a given year (as YYYY-MM strings)
-const getMonthsForYear = (year) =>
-  Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+// getMonthsForYear is now a hoisted function helper defined above
 
 // Month label short (Jan, Feb …)
 const monthShort = (period) => {
@@ -531,7 +572,7 @@ const renderChart = () => {
   const canvas = dom.financeChart; if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
-  const dw = canvas.clientWidth, dh = 260;
+  const dw = canvas.clientWidth || canvas.parentElement.clientWidth || 600, dh = 260;
   canvas.width = dw * dpr; canvas.height = dh * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, dw, dh);
@@ -721,7 +762,7 @@ const drawGroupedBarChart = (canvas, labels, datasets, yLabel) => {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
-  const dw  = canvas.clientWidth || 600;
+  const dw  = canvas.clientWidth || canvas.parentElement.clientWidth || 600;
   const dh  = 260;
   canvas.width  = dw * dpr;
   canvas.height = dh * dpr;
@@ -1056,6 +1097,14 @@ const initializeApp = async () => {
   // Apply role-based UI immediately
   applyRole(auth.role());
 
+  // Initialize state periods/years dynamically on load
+  const currentYear = String(new Date().getFullYear());
+  const currentMonth = String(new Date().getMonth() + 1).padStart(2, "0");
+  state.budgetUI.activePeriod = `${currentYear}-${currentMonth}`;
+  state.budgetUI.analyzerYear = currentYear;
+  state.budgetUI.surplusYear = currentYear;
+  state.budgetUI.monthlyBudgetsYear = currentYear;
+
   // ── Clear any test data (runs once, then removes the flag)
   if (!localStorage.getItem("_dataClearedV1")) {
     localStorage.removeItem(STORAGE_KEY);
@@ -1125,7 +1174,7 @@ const initializeApp = async () => {
   dom.budgetMonthSelect.addEventListener("change", (e) => {
     const [year] = state.budgetUI.activePeriod.split("-");
     state.budgetUI.activePeriod = `${year}-${e.target.value}`;
-    renderBudgetConfigForm();
+    renderBudget();
   });
 
   // Delete budget

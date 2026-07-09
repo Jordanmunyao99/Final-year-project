@@ -107,11 +107,22 @@
             </label>
 
             <label class="form__field">
-              <span>Amount</span>
+              <span>Type</span>
+              <select id="typeInput" required>
+                <option value="expense">Expense</option>
+                <option value="income">Income</option>
+              </select>
+              <small class="error" id="typeError"></small>
+            </label>
+
+            <label class="form__field">
+              <span>Amount ($)</span>
               <input
                 id="amountInput"
                 type="number"
-                placeholder="e.g., 1200 or -45"
+                min="0"
+                step="0.01"
+                placeholder="e.g., 1200"
                 required
               />
               <small class="error" id="amountError"></small>
