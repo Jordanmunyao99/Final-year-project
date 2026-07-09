@@ -126,12 +126,19 @@ const db = {
     return DB_URL && DB_URL !== "YOUR_SUPABASE_URL" && DB_KEY && DB_KEY !== "YOUR_SUPABASE_ANON_KEY";
   },
 
+  getEndpoint(path) {
+    let base = DB_URL.trim();
+    if (base.endsWith("/")) base = base.slice(0, -1);
+    if (!base.endsWith("/rest/v1")) base += "/rest/v1";
+    return `${base}${path}`;
+  },
+
   async getTransactions() {
     if (!this.isConfigured()) {
       const s = localStorage.getItem(STORAGE_KEY);
       return s ? JSON.parse(s) : [];
     }
-    const res = await fetch(`${DB_URL}/transactions?order=date.desc`, {
+    const res = await fetch(this.getEndpoint("/transactions?order=date.desc"), {
       headers: {
         "apikey": DB_KEY,
         "Authorization": `Bearer ${DB_KEY}`
@@ -147,7 +154,7 @@ const db = {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
       return tx;
     }
-    const res = await fetch(`${DB_URL}/transactions`, {
+    const res = await fetch(this.getEndpoint("/transactions"), {
       method: "POST",
       headers: {
         "apikey": DB_KEY,
@@ -170,7 +177,7 @@ const db = {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
       return;
     }
-    const res = await fetch(`${DB_URL}/transactions?id=eq.${id}`, {
+    const res = await fetch(this.getEndpoint(`/transactions?id=eq.${id}`), {
       method: "PATCH",
       headers: {
         "apikey": DB_KEY,
@@ -188,7 +195,7 @@ const db = {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
       return;
     }
-    const res = await fetch(`${DB_URL}/transactions?id=eq.${id}`, {
+    const res = await fetch(this.getEndpoint(`/transactions?id=eq.${id}`), {
       method: "DELETE",
       headers: {
         "apikey": DB_KEY,
@@ -203,7 +210,7 @@ const db = {
       const s = localStorage.getItem(BUDGET_KEY);
       return s ? JSON.parse(s) : {};
     }
-    const res = await fetch(`${DB_URL}/budgets`, {
+    const res = await fetch(this.getEndpoint("/budgets"), {
       headers: {
         "apikey": DB_KEY,
         "Authorization": `Bearer ${DB_KEY}`
@@ -224,7 +231,7 @@ const db = {
       localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budgets));
       return;
     }
-    const res = await fetch(`${DB_URL}/budgets`, {
+    const res = await fetch(this.getEndpoint("/budgets"), {
       method: "POST",
       headers: {
         "apikey": DB_KEY,
@@ -243,7 +250,7 @@ const db = {
       localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budgets));
       return;
     }
-    const res = await fetch(`${DB_URL}/budgets?period=eq.${period}`, {
+    const res = await fetch(this.getEndpoint(`/budgets?period=eq.${period}`), {
       method: "DELETE",
       headers: {
         "apikey": DB_KEY,
