@@ -1024,7 +1024,7 @@ const exportSurplusCSV = () => {
     return [periodLabel(p), limit > 0 ? limit : "N/A", actual, surplus, reinvest, limit > 0 ? available : "N/A"];
   });
   downloadCSV("surplus-reinvestment.csv",
-    ["Period", "Budget", "Spent", "Surplus", "Carried In", "Total Available"],
+    ["Period", "Budget", "Earned", "Spent", "Surplus", "Carried In", "Total Available"],
     rows
   );
   showToast("Surplus & Reinvestment exported.");
