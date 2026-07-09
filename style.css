@@ -1413,14 +1413,7 @@ body[data-role="farmer"] #surplusSection {
   display: none;
 }
 
-/* Admin: hide the add-transaction submit (edit mode only — JS sets data-editing) */
-body[data-role="admin"] #submitBtn {
-  display: none;
-}
 
-body[data-role="admin"] #submitBtn[data-editing="true"] {
-  display: inline-flex;
-}
 
 body[data-role="admin"] .card.form .section-title {
   color: var(--primary);

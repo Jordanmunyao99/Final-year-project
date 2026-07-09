@@ -117,24 +117,174 @@ const periodLabel = (period) => {
 const getCSSVar = (name) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-// ─── Persistence ──────────────────────────────────────────────────────────────
-const saveToLocalStorage   = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
-const loadFromLocalStorage = () => {
+// ─── Persistence & Database ────────────────────────────────────────────────────
+const DB_URL = "YOUR_SUPABASE_URL";
+const DB_KEY = "YOUR_SUPABASE_ANON_KEY";
+
+const db = {
+  isConfigured() {
+    return DB_URL && DB_URL !== "YOUR_SUPABASE_URL" && DB_KEY && DB_KEY !== "YOUR_SUPABASE_ANON_KEY";
+  },
+
+  async getTransactions() {
+    if (!this.isConfigured()) {
+      const s = localStorage.getItem(STORAGE_KEY);
+      return s ? JSON.parse(s) : [];
+    }
+    const res = await fetch(`${DB_URL}/transactions?order=date.desc`, {
+      headers: {
+        "apikey": DB_KEY,
+        "Authorization": `Bearer ${DB_KEY}`
+      }
+    });
+    if (!res.ok) throw new Error("Failed to load transactions from remote database.");
+    return res.json();
+  },
+
+  async addTransaction(tx) {
+    if (!this.isConfigured()) {
+      state.transactions = [tx, ...state.transactions];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
+      return tx;
+    }
+    const res = await fetch(`${DB_URL}/transactions`, {
+      method: "POST",
+      headers: {
+        "apikey": DB_KEY,
+        "Authorization": `Bearer ${DB_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+      },
+      body: JSON.stringify(tx)
+    });
+    if (!res.ok) throw new Error("Failed to add transaction to remote database.");
+    const data = await res.json();
+    return data[0];
+  },
+
+  async updateTransaction(id, updates) {
+    if (!this.isConfigured()) {
+      state.transactions = state.transactions.map((tx) =>
+        tx.id === id ? { ...tx, ...updates } : tx
+      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
+      return;
+    }
+    const res = await fetch(`${DB_URL}/transactions?id=eq.${id}`, {
+      method: "PATCH",
+      headers: {
+        "apikey": DB_KEY,
+        "Authorization": `Bearer ${DB_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) throw new Error("Failed to update transaction in remote database.");
+  },
+
+  async deleteTransaction(id) {
+    if (!this.isConfigured()) {
+      state.transactions = state.transactions.filter((tx) => tx.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
+      return;
+    }
+    const res = await fetch(`${DB_URL}/transactions?id=eq.${id}`, {
+      method: "DELETE",
+      headers: {
+        "apikey": DB_KEY,
+        "Authorization": `Bearer ${DB_KEY}`
+      }
+    });
+    if (!res.ok) throw new Error("Failed to delete transaction from remote database.");
+  },
+
+  async getBudgets() {
+    if (!this.isConfigured()) {
+      const s = localStorage.getItem(BUDGET_KEY);
+      return s ? JSON.parse(s) : {};
+    }
+    const res = await fetch(`${DB_URL}/budgets`, {
+      headers: {
+        "apikey": DB_KEY,
+        "Authorization": `Bearer ${DB_KEY}`
+      }
+    });
+    if (!res.ok) throw new Error("Failed to load budgets from remote database.");
+    const data = await res.json();
+    const budgets = {};
+    data.forEach(item => {
+      budgets[item.period] = item.config;
+    });
+    return budgets;
+  },
+
+  async saveBudget(period, config) {
+    if (!this.isConfigured()) {
+      state.budgets[period] = config;
+      localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budgets));
+      return;
+    }
+    const res = await fetch(`${DB_URL}/budgets`, {
+      method: "POST",
+      headers: {
+        "apikey": DB_KEY,
+        "Authorization": `Bearer ${DB_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+      },
+      body: JSON.stringify({ period, config })
+    });
+    if (!res.ok) throw new Error("Failed to save budget to remote database.");
+  },
+
+  async deleteBudget(period) {
+    if (!this.isConfigured()) {
+      delete state.budgets[period];
+      localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budgets));
+      return;
+    }
+    const res = await fetch(`${DB_URL}/budgets?period=eq.${period}`, {
+      method: "DELETE",
+      headers: {
+        "apikey": DB_KEY,
+        "Authorization": `Bearer ${DB_KEY}`
+      }
+    });
+    if (!res.ok) throw new Error("Failed to delete budget from remote database.");
+  }
+};
+
+const loadFromLocalStorage = async () => {
   try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    state.transactions = s ? JSON.parse(s) : [];
+    state.transactions = await db.getTransactions();
   } catch (e) {
-    console.error("Failed to parse transactions from localStorage:", e);
+    console.error("Failed to load transactions:", e);
     state.transactions = [];
   }
 };
-const saveBudgets  = () => localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budgets));
-const loadBudgets  = () => {
-  try { const s = localStorage.getItem(BUDGET_KEY); state.budgets = s ? JSON.parse(s) : {}; }
-  catch { state.budgets = {}; }
+
+const loadBudgets = async () => {
+  try {
+    state.budgets = await db.getBudgets();
+  } catch (e) {
+    console.error("Failed to load budgets:", e);
+    state.budgets = {};
+  }
 };
+
 const getBudgetConfig = (p) => state.budgets[p] || null;
-const setBudgetConfig = (p, cfg) => { state.budgets[p] = { ...cfg, period: p }; saveBudgets(); };
+const setBudgetConfig = async (p, cfg, persist = true) => {
+  const updatedCfg = { ...cfg, period: p };
+  state.budgets[p] = updatedCfg;
+  if (persist) {
+    try {
+      await db.saveBudget(p, updatedCfg);
+    } catch (error) {
+      console.error(error);
+      showToast(error.message, "error");
+    }
+  }
+};
 
 const saveTheme = () => localStorage.setItem(THEME_KEY, state.theme);
 const loadTheme = () => { const s = localStorage.getItem(THEME_KEY); setTheme(s || "dark"); };
@@ -186,13 +336,14 @@ const resetFormState = () => {
   dom.submitBtn.textContent = "Add Transaction";
   dom.submitBtn.removeAttribute("data-editing");
   dom.cancelEditBtn.hidden = true; clearErrors();
+  const formTitle = document.querySelector(".card.form .section-title");
+  if (formTitle) formTitle.textContent = "Add Transaction";
 };
 
 // ─── Transaction CRUD ─────────────────────────────────────────────────────────
-const addTransaction = () => {
-  // New transactions: farmer only. Editing existing: admin only.
+const addTransaction = async () => {
   if (!state.editingId && !can.addTransaction()) {
-    showToast("Only farmers can add new transactions.", "error"); return;
+    showToast("You do not have permission to add new transactions.", "error"); return;
   }
   if (state.editingId && !can.editTransaction()) {
     showToast("Only admins can edit transactions.", "error"); return;
@@ -200,15 +351,24 @@ const addTransaction = () => {
   if (!validateForm()) { showToast("Please fix the highlighted fields.", "error"); return; }
   const title = dom.titleInput.value.trim(), amount = Number(dom.amountInput.value),
         category = dom.categoryInput.value, date = dom.dateInput.value;
-  if (state.editingId) {
-    state.transactions = state.transactions.map((tx) =>
-      tx.id === state.editingId ? { ...tx, title, amount, category, date } : tx);
-    showToast("Transaction updated.");
-  } else {
-    state.transactions = [{ id: generateID(), title, amount, category, date }, ...state.transactions];
-    showToast("Transaction added.");
+  try {
+    if (state.editingId) {
+      const updates = { title, amount, category, date };
+      await db.updateTransaction(state.editingId, updates);
+      state.transactions = state.transactions.map((tx) =>
+        tx.id === state.editingId ? { ...tx, ...updates } : tx);
+      showToast("Transaction updated.");
+    } else {
+      const newTx = { id: generateID(), title, amount, category, date };
+      const savedTx = await db.addTransaction(newTx);
+      state.transactions = [savedTx, ...state.transactions];
+      showToast("Transaction added.");
+    }
+    resetFormState(); renderApp();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message, "error");
   }
-  resetFormState(); saveToLocalStorage(); renderApp();
 };
 
 const startEditing = (id) => {
@@ -218,12 +378,20 @@ const startEditing = (id) => {
   dom.categoryInput.value = tx.category; dom.dateInput.value = tx.date;
   state.editingId = id; dom.submitBtn.textContent = "Save Changes";
   dom.submitBtn.dataset.editing = "true";
+  const formTitle = document.querySelector(".card.form .section-title");
+  if (formTitle) formTitle.textContent = "Edit Transaction";
   dom.cancelEditBtn.hidden = false; dom.titleInput.focus(); showToast("Editing mode enabled.");
 };
 
-const deleteTransaction = (id) => {
-  state.transactions = state.transactions.filter((tx) => tx.id !== id);
-  saveToLocalStorage(); renderApp(); showToast("Transaction deleted.");
+const deleteTransaction = async (id) => {
+  try {
+    await db.deleteTransaction(id);
+    state.transactions = state.transactions.filter((tx) => tx.id !== id);
+    renderApp(); showToast("Transaction deleted.");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message, "error");
+  }
 };
 
 const openConfirmModal  = (id) => {
@@ -496,7 +664,7 @@ const closeAllocModal = () => {
   dom.allocModal.setAttribute("aria-hidden", "true");
 };
 
-const saveAllocModal = () => {
+const saveAllocModal = async () => {
   const label  = dom.allocLabelInput.value.trim();
   const amount = parseFloat(dom.allocAmountInput.value) || 0;
   if (!label) { dom.allocLabelInput.focus(); showToast("Label is required.", "error"); return; }
@@ -513,27 +681,27 @@ const saveAllocModal = () => {
     allocs.push({ id: generateID(), label, amount });
   }
 
-  setBudgetConfig(period, { ...cfg, allocations: allocs });
+  await setBudgetConfig(period, { ...cfg, allocations: allocs });
   closeAllocModal();
   renderBudgetConfigForm();
   showToast(editId ? "Allocation updated." : "Allocation added.");
 };
 
-const deleteAllocation = (allocId) => {
+const deleteAllocation = async (allocId) => {
   const period = state.budgetUI.activePeriod;
   const cfg    = getBudgetConfig(period) || {};
   const allocs = (cfg.allocations || []).filter((a) => a.id !== allocId);
-  setBudgetConfig(period, { ...cfg, allocations: allocs });
+  await setBudgetConfig(period, { ...cfg, allocations: allocs });
   renderBudgetConfigForm();
   showToast("Allocation removed.");
 };
 
 // Save just the overall limit (allocations are saved immediately on add/edit/delete)
-const saveBudgetConfig = () => {
+const saveBudgetConfig = async () => {
   if (!can.setBudget()) { showToast("You don't have permission to save budgets.", "error"); return; }
   const period = state.budgetUI.activePeriod;
   const cfg    = getBudgetConfig(period) || {};
-  setBudgetConfig(period, {
+  await setBudgetConfig(period, {
     ...cfg,
     overallLimit: parseFloat(dom.budgetOverallLimit.value) || 0,
   });
@@ -672,7 +840,7 @@ const renderSurplus = () => {
     const surplus = computeSurplus(limit, actual, income);
     const reinvest= carried;
     const available = limit + reinvest;
-    if (limit > 0) setBudgetConfig(p, { ...cfg, surplus, reinvestmentPool: reinvest, _actualSpending: actual });
+    if (limit > 0) setBudgetConfig(p, { ...cfg, surplus, reinvestmentPool: reinvest, _actualSpending: actual }, false);
     carried = surplus; // carry this month's surplus into next
     return { p, limit, actual, surplus, reinvest, available };
   });
@@ -735,14 +903,19 @@ const renderBudgetPeriodSelect = () => {
 };
 
 // ─── Delete budget for active period ─────────────────────────────────────────
-const deleteBudget = () => {
+const deleteBudget = async () => {
   if (!can.deleteBudget()) { showToast("Only admins can delete budgets.", "error"); return; }
   const period = state.budgetUI.activePeriod;
   if (!state.budgets[period]) { showToast("No budget set for this period.", "error"); return; }
-  delete state.budgets[period];
-  saveBudgets();
-  showToast("Budget deleted.");
-  renderBudget();
+  try {
+    await db.deleteBudget(period);
+    delete state.budgets[period];
+    showToast("Budget deleted.");
+    renderBudget();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message, "error");
+  }
 };
 
 // ─── Full budget render ───────────────────────────────────────────────────────
@@ -857,7 +1030,7 @@ const applyRole = (role) => {
 
 // ─── Permission helpers ────────────────────────────────────────────────────────
 const can = {
-  addTransaction:    () => auth.role() === "farmer",
+  addTransaction:    () => auth.role() === "farmer" || auth.role() === "admin",
   editTransaction:   () => auth.role() === "admin",
   deleteTransaction: () => auth.role() === "admin",
   setBudget:         () => true,   // both roles can set budgets
@@ -872,15 +1045,9 @@ const renderApp = () => {
 };
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
-const initializeApp = () => {
+const initializeApp = async () => {
   // Apply role-based UI immediately
   applyRole(auth.role());
-
-  // Update form heading based on role
-  const formTitle = document.querySelector(".card.form .section-title");
-  if (formTitle) {
-    formTitle.textContent = auth.role() === "admin" ? "Edit Transaction" : "Add Transaction";
-  }
 
   // ── Clear any test data (runs once, then removes the flag)
   if (!localStorage.getItem("_dataClearedV1")) {
@@ -889,7 +1056,9 @@ const initializeApp = () => {
     localStorage.setItem("_dataClearedV1", "1");
   }
 
-  loadFromLocalStorage(); loadBudgets(); loadTheme();
+  loadTheme();
+  await loadFromLocalStorage();
+  await loadBudgets();
   dom.appRoot.setAttribute("data-tab", "transactions");
   dom.budgetPanel.hidden = true;
   renderApp();
