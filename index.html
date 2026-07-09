@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Finance Tracker</title>
+    <!-- Session guard: redirect to login before any content renders -->
+    <script>
+      (function() {
+        try {
+          var s = JSON.parse(sessionStorage.getItem("financeTrackerAuth"));
+          if (!s || !s.role) { window.location.replace("login.html"); }
+        } catch(e) { window.location.replace("login.html"); }
+      })();
+    </script>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+
+    <div class="bg-gradient"></div>
+    <div class="skeleton" id="skeleton" aria-hidden="true">
+      <div class="skeleton__block"></div>
+      <div class="skeleton__block"></div>
+      <div class="skeleton__block"></div>
+    </div>
+
+    <div class="app">
+      <header class="app__header">
+        <div>
+          <p class="app__eyebrow">Personal Finance</p>
+          <h1 class="app__title">Advanced Finance Tracker</h1>
+          <p class="app__subtitle">
+            Track income, expenses, and your balance with clarity.
+          </p>
+        </div>
+        <div class="app__actions">
+          <!-- User info bar -->
+          <div class="user-info" id="userInfo">
+            <span class="user-badge" id="userBadge"></span>
+            <button class="btn btn--ghost" id="logoutBtn" type="button">Logout</button>
+          </div>
+          <button class="btn btn--ghost" id="themeToggleBtn" type="button">
+            Light Mode
+          </button>
+          <div class="export-dropdown" id="exportDropdown">
+            <button class="btn btn--accent" id="exportCsvBtn" type="button">
+              Export ▾
+            </button>
+            <div class="export-menu" id="exportMenu" hidden>
+              <button class="export-menu__item" id="exportTransactionsBtn" type="button">Transactions CSV</button>
+              <button class="export-menu__item" id="exportSurplusBtn" type="button">Surplus &amp; Reinvestment CSV</button>
+              <button class="export-menu__item" id="exportMonthlyBudgetBtn" type="button">Monthly Budget CSV</button>
+            </div>
+          </div>
+          <button class="btn btn--ghost" id="resetFiltersBtn" type="button">
+            Reset Filters
+          </button>
+          <button class="btn btn--ghost tab-btn tab-btn--active" id="transactionsTabBtn" type="button" data-tab="transactions">
+            Transactions
+          </button>
+          <button class="btn btn--ghost tab-btn" id="budgetTabBtn" type="button" data-tab="budget">
+            Budget
+          </button>
+        </div>
+      </header>
+
+      <section class="summary">
+        <div class="card summary__card">
+          <p class="summary__label">Total Balance</p>
+          <h2 class="summary__value" id="totalBalance">$0.00</h2>
+        </div>
+        <div class="card summary__card">
+          <p class="summary__label">Total Income</p>
+          <h2 class="summary__value summary__value--income" id="totalIncome">
+            $0.00
+          </h2>
+        </div>
+        <div class="card summary__card">
+          <p class="summary__label">Total Expenses</p>
+          <h2 class="summary__value summary__value--expense" id="totalExpenses">
+            $0.00
+          </h2>
+        </div>
+      </section>
+
+      <section class="card chart">
+        <div class="transactions__header">
+          <h3 class="section-title">Cash Flow Overview</h3>
+          <p class="transactions__meta">Income vs Expense</p>
+        </div>
+        <canvas id="financeChart" width="800" height="260"></canvas>
+      </section>
+
+      <section class="grid">
+        <div class="card form">
+          <h3 class="section-title">Add Transaction</h3>
+          <form id="transactionForm" class="form__grid" autocomplete="off">
+            <label class="form__field">
+              <span>Title</span>
+              <input
+                id="titleInput"
+                type="text"
+                placeholder="e.g., Freelance Payment"
+                required
+              />
+              <small class="error" id="titleError"></small>
+            </label>
+
+            <label class="form__field">
+              <span>Amount</span>
+              <input
+                id="amountInput"
+                type="number"
+                placeholder="e.g., 1200 or -45"
+                required
+              />
+              <small class="error" id="amountError"></small>
+            </label>
+
+            <label class="form__field">
+              <span>Category</span>
+              <select id="categoryInput" required>
+                <option value="" disabled selected>Select category</option>
+                <option>Salary</option>
+                <option>Business</option>
+                <option>Investments</option>
+                <option>Housing</option>
+                <option>Food</option>
+                <option>Transport</option>
+                <option>Health</option>
+                <option>Entertainment</option>
+                <option>Education</option>
+                <option>Other</option>
+              </select>
+              <small class="error" id="categoryError"></small>
+            </label>
+
+            <label class="form__field">
+              <span>Date</span>
+              <input id="dateInput" type="date" required />
+              <small class="error" id="dateError"></small>
+            </label>
+
+            <div class="form__actions">
+              <button class="btn btn--primary" type="submit" id="submitBtn">
+                Add Transaction
+              </button>
+              <button
+                class="btn btn--ghost"
+                type="button"
+                id="cancelEditBtn"
+                hidden
+              >
+                Cancel Edit
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card filters">
+          <h3 class="section-title">Filters & Search</h3>
+          <div class="filters__grid">
+            <label class="form__field">
+              <span>Year</span>
+              <select id="filterYear">
+                <option value="all">All years</option>
+              </select>
+            </label>
+
+            <label class="form__field">
+              <span>Month</span>
+              <select id="filterMonth">
+                <option value="all">All months</option>
+                <option value="01">January</option>
+                <option value="02">February</option>
+                <option value="03">March</option>
+                <option value="04">April</option>
+                <option value="05">May</option>
+                <option value="06">June</option>
+                <option value="07">July</option>
+                <option value="08">August</option>
+                <option value="09">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+            </label>
+
+            <label class="form__field">
+              <span>Category</span>
+              <select id="filterCategory">
+                <option value="all">All categories</option>
+                <option>Salary</option>
+                <option>Business</option>
+                <option>Investments</option>
+                <option>Housing</option>
+                <option>Food</option>
+                <option>Transport</option>
+                <option>Health</option>
+                <option>Entertainment</option>
+                <option>Education</option>
+                <option>Other</option>
+              </select>
+            </label>
+
+            <label class="form__field">
+              <span>Type</span>
+              <select id="filterType">
+                <option value="all">All</option>
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+              </select>
+            </label>
+
+            <label class="form__field form__field--full">
+              <span>Search by title</span>
+              <input
+                id="searchInput"
+                type="text"
+                placeholder="Start typing..."
+              />
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card transactions">
+        <div class="transactions__header">
+          <h3 class="section-title">Transactions</h3>
+          <p class="transactions__meta" id="resultsCount">0 results</p>
+        </div>
+
+        <div class="transactions__list" id="transactionsList">
+          <div class="transactions__empty">
+            <div class="empty__icon">+</div>
+            <p>No transactions yet. Add your first one to get started.</p>
+            <button class="btn btn--accent empty-add-btn" type="button">
+              Add First Transaction
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===== BUDGET PANEL ===== -->
+    <div id="budgetPanel" class="budget-panel" hidden>
+
+      <!-- Monthly Budgets overview -->
+      <section class="card">
+        <div class="budget-config-header">
+          <h3 class="section-title" style="margin-bottom:0">Monthly Budgets</h3>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label class="budget-period-label" for="monthlyBudgetsYearSelect">Year:</label>
+            <select id="monthlyBudgetsYearSelect" class="budget-period-select"></select>
+          </div>
+        </div>
+        <div id="monthlyBudgetsList" style="margin-top:12px"><!-- rendered by JS --></div>
+      </section>
+
+      <!-- Budget vs Actual chart (merged) -->
+      <section class="card">
+        <div class="budget-config-header">
+          <div>
+            <h3 class="section-title" style="margin-bottom:4px">Budget vs Actual</h3>
+            <p class="transactions__meta">Monthly budget vs actual spend</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label class="budget-period-label" for="analyzerYearSelect">Year:</label>
+            <select id="analyzerYearSelect" class="budget-period-select"></select>
+          </div>
+        </div>
+        <canvas id="analyzerCanvas" height="260" style="width:100%;height:260px;display:block;margin-top:12px"></canvas>
+      </section>
+
+      <!-- Budget Configuration for selected period -->
+      <section class="card budget-config">
+        <div class="budget-config-header">
+          <h3 class="section-title" style="margin-bottom:0">Budget Configuration</h3>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <label class="budget-period-label" for="budgetYearSelect">Year:</label>
+            <select id="budgetYearSelect" class="budget-period-select"></select>
+            <label class="budget-period-label" for="budgetMonthSelect">Month:</label>
+            <select id="budgetMonthSelect" class="budget-period-select"></select>
+          </div>
+        </div>
+        <form id="budgetForm" autocomplete="off" style="margin-top:16px">
+          <label class="form__field" style="max-width:260px;margin-bottom:16px">
+            <span>Overall Monthly Limit ($)</span>
+            <input id="budgetOverallLimit" type="number" min="0" step="0.01" placeholder="0.00" />
+          </label>
+          <div class="budget-alloc-header">
+            <h4 class="budget-cat-title" style="margin-bottom:0">Budget Allocations</h4>
+            <button class="btn btn--ghost" type="button" id="addAllocationBtn" style="padding:6px 14px;font-size:13px">+ Add</button>
+          </div>
+          <div id="budgetCatGrid" style="margin-top:10px"><!-- rendered by JS --></div>
+          <div class="form__actions" style="margin-top:16px">
+            <button class="btn btn--primary" type="submit" id="saveBudgetBtn">Save Budget</button>
+            <button class="btn btn--ghost" type="button" id="deleteBudgetBtn" style="color:var(--expense);border-color:var(--expense)">Delete Budget</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Surplus & Reinvestment table -->
+      <section class="card" id="surplusSection">
+        <div class="budget-config-header">
+          <div>
+            <h3 class="section-title" style="margin-bottom:4px">Surplus &amp; Reinvestment</h3>
+            <p class="transactions__meta">Carry-forward per month — real time</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label class="budget-period-label" for="surplusYearSelect">Year:</label>
+            <select id="surplusYearSelect" class="budget-period-select"></select>
+          </div>
+        </div>
+        <div id="budgetSurplusContent" style="margin-top:12px"><!-- rendered by JS --></div>
+      </section>
+
+    </div>
+    <!-- ===== END BUDGET PANEL ===== -->
+
+    <!-- Allocation modal -->
+    <div class="modal" id="allocModal" aria-hidden="true">
+      <div class="modal__backdrop" data-close="true"></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="allocModalTitle">
+        <h3 class="section-title" id="allocModalTitle">Add Allocation</h3>
+        <div class="form__grid" style="gap:14px;margin-bottom:20px">
+          <label class="form__field">
+            <span>Label</span>
+            <input id="allocLabelInput" type="text" placeholder="e.g. Housing, Food, Transport" />
+          </label>
+          <label class="form__field">
+            <span>Amount ($)</span>
+            <input id="allocAmountInput" type="number" min="0" step="0.01" placeholder="0.00" />
+          </label>
+        </div>
+        <div class="modal__actions">
+          <button class="btn btn--ghost" id="allocModalCancelBtn" type="button">Cancel</button>
+          <button class="btn btn--primary" id="allocModalSaveBtn" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="confirmModal" aria-hidden="true">
+      <div class="modal__backdrop" data-close="true"></div>
+      <div
+        class="modal__content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirmTitle"
+      >
+        <h3 class="section-title" id="confirmTitle">Delete transaction?</h3>
+        <p class="modal__text">This action cannot be undone.</p>
+        <div class="modal__actions">
+          <button class="btn btn--ghost" id="cancelDeleteBtn" type="button">
+            Cancel
+          </button>
+          <button class="btn btn--danger" id="confirmDeleteBtn" type="button">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="main.js"></script>
+  </body>
+</html>
