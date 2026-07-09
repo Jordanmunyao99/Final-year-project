@@ -118,8 +118,8 @@ const getCSSVar = (name) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // ─── Persistence & Database ────────────────────────────────────────────────────
-const DB_URL = "YOUR_SUPABASE_URL";
-const DB_KEY = "YOUR_SUPABASE_ANON_KEY";
+const DB_URL = "https://jcydgzpmqvradgxygttm.supabase.co";
+const DB_KEY = "sb_publishable_xlEvtocMzSojF9KecDTwDQ_8dX8Uoe-";
 
 const db = {
   isConfigured() {
