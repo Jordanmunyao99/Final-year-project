@@ -547,14 +547,13 @@ const filterTransactions = () => {
     const my = year  === "all" || p.split("-")[0] === year;
     const mm = month === "all" || p.split("-")[1] === month;
     
-    // Date range filter (safe against full ISO/timestamp strings by slicing date part)
+    // Date range filter
     let md = true;
-    const txDateOnly = tx.date ? tx.date.slice(0, 10) : "";
     if (startDate) {
-      md = md && (txDateOnly >= startDate);
+      md = md && (tx.date >= startDate);
     }
     if (endDate) {
-      md = md && (txDateOnly <= endDate);
+      md = md && (tx.date <= endDate);
     }
     
     return mc && mt && ms && my && mm && md;
@@ -595,13 +594,7 @@ const renderChart = () => {
   const income   = amounts.filter((a) => a > 0).reduce((s, a) => s + a, 0);
   const expenses = Math.abs(amounts.filter((a) => a < 0).reduce((s, a) => s + a, 0));
   const maxVal   = Math.max(income, expenses, 1);
-
-  // Compute bar width, gap, and starting X dynamically to center perfectly and prevent off-screen clipping
-  const bw = Math.min(120, (dw - 60) * 0.4);
-  const gap = Math.min(80, (dw - 60) * 0.2);
-  const totalW = 2 * bw + gap;
-  const startX = (dw - totalW) / 2;
-  const baseY = dh - 40;
+  const bw = 120, gap = 80, baseY = dh - 40;
   const ih = (income   / maxVal) * (dh - 80);
   const eh = (expenses / maxVal) * (dh - 80);
 
@@ -609,17 +602,16 @@ const renderChart = () => {
   ctx.beginPath(); ctx.moveTo(40, baseY); ctx.lineTo(dw - 40, baseY); ctx.stroke();
 
   ctx.fillStyle = "#22c55e";
-  ctx.fillRect(startX, baseY - ih, bw, ih);
+  ctx.fillRect(160, baseY - ih, bw, ih);
   ctx.fillStyle = "#f97316";
-  ctx.fillRect(startX + bw + gap, baseY - eh, bw, eh);
+  ctx.fillRect(160 + bw + gap, baseY - eh, bw, eh);
 
   ctx.fillStyle = state.theme === "light" ? "#1c1917" : "#f8f4e9";
   ctx.font = "14px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Income",  startX + bw / 2, baseY + 20);
-  ctx.fillText("Expense", startX + bw + gap + bw / 2, baseY + 20);
-  ctx.fillText(formatCurrency(income),   startX + bw / 2, baseY - ih - 10);
-  ctx.fillText(formatCurrency(expenses), startX + bw + gap + bw / 2, baseY - eh - 10);
+  ctx.fillText("Income",  170, baseY + 20);
+  ctx.fillText("Expense", 160 + bw + gap, baseY + 20);
+  ctx.fillText(formatCurrency(income),   150, baseY - ih - 10);
+  ctx.fillText(formatCurrency(expenses), 150 + bw + gap, baseY - eh - 10);
 };
 
 // ─── Monthly Budgets section (with year filter) ───────────────────────────────
