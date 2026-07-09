@@ -50,6 +50,7 @@
               <button class="export-menu__item" id="exportTransactionsBtn" type="button">Transactions CSV</button>
               <button class="export-menu__item" id="exportSurplusBtn" type="button">Surplus &amp; Reinvestment CSV</button>
               <button class="export-menu__item" id="exportMonthlyBudgetBtn" type="button">Monthly Budget CSV</button>
+              <button class="export-menu__item" id="exportAllocationsBtn" type="button">Budget Allocations CSV</button>
             </div>
           </div>
           <button class="btn btn--ghost" id="resetFiltersBtn" type="button">
@@ -65,7 +66,7 @@
       </header>
 
       <section class="summary">
-        <div class="card summary__card">
+        <div class="card summary__card" id="totalBalanceCard">
           <p class="summary__label">Total Balance</p>
           <h2 class="summary__value" id="totalBalance">$0.00</h2>
         </div>
@@ -83,7 +84,7 @@
         </div>
       </section>
 
-      <section class="card chart">
+      <section class="card chart" id="cashFlowSection">
         <div class="transactions__header">
           <h3 class="section-title">Cash Flow Overview</h3>
           <p class="transactions__meta">Income vs Expense</p>
@@ -221,6 +222,16 @@
                 <option value="income">Income</option>
                 <option value="expense">Expense</option>
               </select>
+            </label>
+
+            <label class="form__field">
+              <span>Start Date</span>
+              <input id="filterStartDate" type="date" />
+            </label>
+
+            <label class="form__field">
+              <span>End Date</span>
+              <input id="filterEndDate" type="date" />
             </label>
 
             <label class="form__field form__field--full">

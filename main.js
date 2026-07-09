@@ -21,7 +21,7 @@ const state = {
     surplusYear: "",    // year filter for surplus table
     monthlyBudgetsYear: "", // year filter for monthly budgets list
   },
-  filters: { category: "all", type: "all", search: "", year: "all", month: "all" },
+  filters: { category: "all", type: "all", search: "", year: "all", month: "all", startDate: "", endDate: "" },
   editingId: null,
   pendingDeleteId: null,
   theme: "dark",
@@ -52,6 +52,9 @@ const dom = {
   exportTransactionsBtn: document.getElementById("exportTransactionsBtn"),
   exportSurplusBtn:      document.getElementById("exportSurplusBtn"),
   exportMonthlyBudgetBtn:document.getElementById("exportMonthlyBudgetBtn"),
+  exportAllocationsBtn:  document.getElementById("exportAllocationsBtn"),
+  filterStartDate:       document.getElementById("filterStartDate"),
+  filterEndDate:         document.getElementById("filterEndDate"),
   themeToggleBtn:        document.getElementById("themeToggleBtn"),
   transactionsList:      document.getElementById("transactionsList"),
   resultsCount:          document.getElementById("resultsCount"),
@@ -131,8 +134,8 @@ const getCSSVar = (name) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // ─── Persistence & Database ────────────────────────────────────────────────────
-const DB_URL = "https://jcydgzpmqvradgxygttm.supabase.co";
-const DB_KEY = "sb_publishable_xlEvtocMzSojF9KecDTwDQ_8dX8Uoe-";
+const DB_URL = "YOUR_SUPABASE_URL";
+const DB_KEY = "YOUR_SUPABASE_ANON_KEY";
 
 const db = {
   isConfigured() {
@@ -535,7 +538,7 @@ const renderTransactionItem = (tx) => `
   </div>`;
 
 const filterTransactions = () => {
-  const { category, type, search, year, month } = state.filters;
+  const { category, type, search, year, month, startDate, endDate } = state.filters;
   return state.transactions.filter((tx) => {
     const mc = category === "all" || tx.category === category;
     const mt = type === "all" || (type === "income" && tx.amount > 0) || (type === "expense" && tx.amount < 0);
@@ -543,7 +546,17 @@ const filterTransactions = () => {
     const p  = getPeriod(tx.date);
     const my = year  === "all" || p.split("-")[0] === year;
     const mm = month === "all" || p.split("-")[1] === month;
-    return mc && mt && ms && my && mm;
+    
+    // Date range filter
+    let md = true;
+    if (startDate) {
+      md = md && (tx.date >= startDate);
+    }
+    if (endDate) {
+      md = md && (tx.date <= endDate);
+    }
+    
+    return mc && mt && ms && my && mm && md;
   });
 };
 
@@ -860,6 +873,11 @@ const renderSurplus = () => {
   dom.surplusYearSelect.innerHTML = years.map((y) =>
     `<option value="${y}" ${y === state.budgetUI.surplusYear ? "selected" : ""}>${y}</option>`
   ).join("");
+  
+  // Update export button text to reflect selected year
+  if (dom.exportSurplusBtn) {
+    dom.exportSurplusBtn.textContent = `Surplus & Reinvestment CSV (${state.budgetUI.surplusYear})`;
+  }
 
   const totals = computePeriodTotals(state.transactions);
 
@@ -890,7 +908,7 @@ const renderSurplus = () => {
     const available = limit + reinvest;
     if (limit > 0) setBudgetConfig(p, { ...cfg, surplus, reinvestmentPool: reinvest, _actualSpending: actual }, false);
     carried = surplus; // carry this month's surplus into next
-    return { p, limit, actual, surplus, income, reinvest, available };
+    return { p, limit, actual, income, surplus, reinvest, available };
   });
 
   dom.budgetSurplusContent.innerHTML = `
@@ -909,7 +927,7 @@ const renderSurplus = () => {
         </thead>
         <tbody>
           ${rows.map((r) => `
-             <tr>
+            <tr>
               <td>${monthShort(r.p)}</td>
               <td>${r.limit > 0 ? formatCurrency(r.limit) : "—"}</td>
               <td>${formatCurrency(r.income)}</td>
@@ -1009,10 +1027,24 @@ const exportToCSV = () => {
 };
 
 const exportSurplusCSV = () => {
+  const selectedYear = state.budgetUI.surplusYear || String(new Date().getFullYear());
+  const totals = computePeriodTotals(state.transactions);
   const allPeriods = getAllPeriods().slice().reverse(); // oldest first
-  const totals     = computePeriodTotals(state.transactions);
+  
   let carried = 0;
-  const rows = allPeriods.map((p) => {
+  // First pass: accumulate surplus from all prior years
+  allPeriods.forEach((p) => {
+    if (p.split("-")[0] >= selectedYear) return;
+    const cfg    = getBudgetConfig(p) || {};
+    const limit  = cfg.overallLimit || 0;
+    const actual = (totals.get(p) || {}).expenses || 0;
+    const income = (totals.get(p) || {}).income || 0;
+    carried += computeSurplus(limit, actual, income);
+  });
+
+  // Second pass: get data for the selected year's 12 months
+  const months = getMonthsForYear(selectedYear);
+  const rows = months.map((p) => {
     const cfg     = getBudgetConfig(p) || {};
     const limit   = cfg.overallLimit || 0;
     const actual  = (totals.get(p) || {}).expenses || 0;
@@ -1020,31 +1052,48 @@ const exportSurplusCSV = () => {
     const surplus = computeSurplus(limit, actual, income);
     const reinvest= carried;
     const available = limit + reinvest;
-    carried = surplus;
+    carried = surplus; // carry this month's surplus into next
     return [periodLabel(p), limit > 0 ? limit : "N/A", actual, surplus, reinvest, limit > 0 ? available : "N/A"];
   });
-  downloadCSV("surplus-reinvestment.csv",
-    ["Period", "Budget", "Earned", "Spent", "Surplus", "Carried In", "Total Available"],
+
+  downloadCSV(`surplus-reinvestment-${selectedYear}.csv`,
+    ["Period", "Budget", "Spent", "Surplus", "Carried In", "Total Available"],
     rows
   );
-  showToast("Surplus & Reinvestment exported.");
+  showToast(`Surplus & Reinvestment for ${selectedYear} exported.`);
 };
 
 const exportMonthlyBudgetCSV = () => {
   const allPeriods = getAllPeriods().slice().reverse();
-  const totals     = computePeriodTotals(state.transactions);
   const rows = allPeriods.map((p) => {
     const cfg   = getBudgetConfig(p) || {};
     const limit = cfg.overallLimit || 0;
-    const allocs= (cfg.allocations || []).map((a) => `${a.label}: ${formatCurrency(a.amount)}`).join("; ");
-    return [periodLabel(p), limit > 0 ? limit : "N/A", allocs || "N/A"];
-  }).filter((r) => r[1] !== "—"); // only periods with a budget set
+    return [periodLabel(p), limit > 0 ? limit : "N/A"];
+  }).filter((r) => r[1] !== "N/A"); // only periods with a budget set
   if (!rows.length) { showToast("No budgets to export.", "error"); return; }
   downloadCSV("monthly-budgets.csv",
-    ["Period", "Overall Limit", "Allocations"],
+    ["Period", "Overall Limit"],
     rows
   );
   showToast("Monthly Budgets exported.");
+};
+
+const exportAllocationsCSV = () => {
+  const allPeriods = getAllPeriods().slice().reverse();
+  const rows = [];
+  allPeriods.forEach((p) => {
+    const cfg = getBudgetConfig(p) || {};
+    const allocs = cfg.allocations || [];
+    allocs.forEach((a) => {
+      rows.push([periodLabel(p), a.label || "Unnamed", a.amount || 0]);
+    });
+  });
+  if (!rows.length) { showToast("No budget allocations to export.", "error"); return; }
+  downloadCSV("budget-allocations.csv",
+    ["Period", "Allocation Label", "Amount"],
+    rows
+  );
+  showToast("Budget Allocations exported.");
 };
 
 // ─── Auth (session guard) ────────────────────────────────────────────────────
@@ -1139,10 +1188,13 @@ const initializeApp = async () => {
   dom.searchInput.addEventListener("input",     (e) => { state.filters.search   = e.target.value; renderTransactions(); });
   dom.filterYear.addEventListener("change",     (e) => { state.filters.year     = e.target.value; renderTransactions(); });
   dom.filterMonth.addEventListener("change",    (e) => { state.filters.month    = e.target.value; renderTransactions(); });
+  dom.filterStartDate.addEventListener("change", (e) => { state.filters.startDate = e.target.value; renderTransactions(); });
+  dom.filterEndDate.addEventListener("change",   (e) => { state.filters.endDate   = e.target.value; renderTransactions(); });
   dom.resetFiltersBtn.addEventListener("click", () => {
-    state.filters = { category: "all", type: "all", search: "", year: "all", month: "all" };
+    state.filters = { category: "all", type: "all", search: "", year: "all", month: "all", startDate: "", endDate: "" };
     dom.filterCategory.value = "all"; dom.filterType.value = "all"; dom.searchInput.value = "";
     dom.filterYear.value = "all"; dom.filterMonth.value = "all";
+    dom.filterStartDate.value = ""; dom.filterEndDate.value = "";
     renderTransactions();
   });
 
@@ -1155,6 +1207,7 @@ const initializeApp = async () => {
   dom.exportTransactionsBtn.addEventListener("click",  exportToCSV);
   dom.exportSurplusBtn.addEventListener("click",       exportSurplusCSV);
   dom.exportMonthlyBudgetBtn.addEventListener("click", exportMonthlyBudgetCSV);
+  dom.exportAllocationsBtn.addEventListener("click",   exportAllocationsCSV);
   dom.themeToggleBtn.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
 
   dom.confirmDeleteBtn.addEventListener("click", () => {
@@ -1225,6 +1278,15 @@ const initializeApp = async () => {
       window.location.href = "login.html";
     });
   }
+
+  // Handle window resizing to redraw active canvas charts responsively
+  window.addEventListener("resize", () => {
+    if (state.budgetUI.activeTab === "budget") {
+      renderAnalyzerChart();
+    } else {
+      renderChart();
+    }
+  });
 };
 
 initializeApp();
