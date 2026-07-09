@@ -134,8 +134,8 @@ const getCSSVar = (name) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // ─── Persistence & Database ────────────────────────────────────────────────────
-const DB_URL = "YOUR_SUPABASE_URL";
-const DB_KEY = "YOUR_SUPABASE_ANON_KEY";
+const DB_URL = "https://jcydgzpmqvradgxygttm.supabase.co";
+const DB_KEY = "sb_publishable_xlEvtocMzSojF9KecDTwDQ_8dX8Uoe-";
 
 const db = {
   isConfigured() {
@@ -547,13 +547,14 @@ const filterTransactions = () => {
     const my = year  === "all" || p.split("-")[0] === year;
     const mm = month === "all" || p.split("-")[1] === month;
     
-    // Date range filter
+    // Date range filter (safe against full ISO/timestamp strings by slicing date part)
     let md = true;
+    const txDateOnly = tx.date ? tx.date.slice(0, 10) : "";
     if (startDate) {
-      md = md && (tx.date >= startDate);
+      md = md && (txDateOnly >= startDate);
     }
     if (endDate) {
-      md = md && (tx.date <= endDate);
+      md = md && (txDateOnly <= endDate);
     }
     
     return mc && mt && ms && my && mm && md;
@@ -594,7 +595,13 @@ const renderChart = () => {
   const income   = amounts.filter((a) => a > 0).reduce((s, a) => s + a, 0);
   const expenses = Math.abs(amounts.filter((a) => a < 0).reduce((s, a) => s + a, 0));
   const maxVal   = Math.max(income, expenses, 1);
-  const bw = 120, gap = 80, baseY = dh - 40;
+
+  // Compute bar width, gap, and starting X dynamically to center perfectly and prevent off-screen clipping on mobile
+  const bw = Math.min(120, (dw - 60) * 0.4);
+  const gap = Math.min(80, (dw - 60) * 0.2);
+  const totalW = 2 * bw + gap;
+  const startX = (dw - totalW) / 2;
+  const baseY = dh - 40;
   const ih = (income   / maxVal) * (dh - 80);
   const eh = (expenses / maxVal) * (dh - 80);
 
@@ -602,16 +609,17 @@ const renderChart = () => {
   ctx.beginPath(); ctx.moveTo(40, baseY); ctx.lineTo(dw - 40, baseY); ctx.stroke();
 
   ctx.fillStyle = "#22c55e";
-  ctx.fillRect(160, baseY - ih, bw, ih);
+  ctx.fillRect(startX, baseY - ih, bw, ih);
   ctx.fillStyle = "#f97316";
-  ctx.fillRect(160 + bw + gap, baseY - eh, bw, eh);
+  ctx.fillRect(startX + bw + gap, baseY - eh, bw, eh);
 
   ctx.fillStyle = state.theme === "light" ? "#1c1917" : "#f8f4e9";
   ctx.font = "14px sans-serif";
-  ctx.fillText("Income",  170, baseY + 20);
-  ctx.fillText("Expense", 160 + bw + gap, baseY + 20);
-  ctx.fillText(formatCurrency(income),   150, baseY - ih - 10);
-  ctx.fillText(formatCurrency(expenses), 150 + bw + gap, baseY - eh - 10);
+  ctx.textAlign = "center";
+  ctx.fillText("Income",  startX + bw / 2, baseY + 20);
+  ctx.fillText("Expense", startX + bw + gap + bw / 2, baseY + 20);
+  ctx.fillText(formatCurrency(income),   startX + bw / 2, baseY - ih - 10);
+  ctx.fillText(formatCurrency(expenses), startX + bw + gap + bw / 2, baseY - eh - 10);
 };
 
 // ─── Monthly Budgets section (with year filter) ───────────────────────────────
@@ -1053,15 +1061,11 @@ const exportSurplusCSV = () => {
     const reinvest= carried;
     const available = limit + reinvest;
     carried = surplus; // carry this month's surplus into next
-    return [periodLabel(p), limit > 0 ? limit : "N/A", actual, surplus, reinvest, limit > 0 ? available : "N/A"];
+    return [periodLabel(p), limit > 0 ? limit : "N/A", income, actual, surplus, reinvest, limit > 0 ? available : "N/A"];
   });
-<<<<<<< HEAD
 
   downloadCSV(`surplus-reinvestment-${selectedYear}.csv`,
-=======
-  downloadCSV("surplus-reinvestment.csv",
->>>>>>> parent of c2c865a (adding income to csv)
-    ["Period", "Budget", "Spent", "Surplus", "Carried In", "Total Available"],
+    ["Period", "Budget", "Earned", "Spent", "Surplus", "Carried In", "Total Available"],
     rows
   );
   showToast(`Surplus & Reinvestment for ${selectedYear} exported.`);
@@ -1072,11 +1076,12 @@ const exportMonthlyBudgetCSV = () => {
   const rows = allPeriods.map((p) => {
     const cfg   = getBudgetConfig(p) || {};
     const limit = cfg.overallLimit || 0;
-    return [periodLabel(p), limit > 0 ? limit : "N/A"];
+    const allocs= (cfg.allocations || []).map((a) => `${a.label}: ${formatCurrency(a.amount)}`).join("; ");
+    return [periodLabel(p), limit > 0 ? limit : "N/A", allocs || "N/A"];
   }).filter((r) => r[1] !== "N/A"); // only periods with a budget set
   if (!rows.length) { showToast("No budgets to export.", "error"); return; }
   downloadCSV("monthly-budgets.csv",
-    ["Period", "Overall Limit"],
+    ["Period", "Overall Limit", "Allocations"],
     rows
   );
   showToast("Monthly Budgets exported.");
@@ -1159,13 +1164,6 @@ const initializeApp = async () => {
   state.budgetUI.analyzerYear = currentYear;
   state.budgetUI.surplusYear = currentYear;
   state.budgetUI.monthlyBudgetsYear = currentYear;
-
-  // ── Clear any test data (runs once, then removes the flag)
-  if (!localStorage.getItem("_dataClearedV1")) {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(BUDGET_KEY);
-    localStorage.setItem("_dataClearedV1", "1");
-  }
 
   loadTheme();
   await loadFromLocalStorage();
