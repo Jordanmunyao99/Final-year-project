@@ -3,8 +3,6 @@
 A portfolio-level personal finance management application built with HTML, CSS, and Vanilla JavaScript.  
 This project was intentionally developed without frameworks or third-party libraries to demonstrate a strong understanding of core front-end fundamentals and application architecture.
 
-Live Demo:  
-https://amirhosseinln.github.io/advanced-finance-tracker/
 
 ---
 
@@ -147,8 +145,6 @@ This application includes role-based access control. You can sign in using one o
 
 ---
 
-## Author
 
-Amirhossein Latifi Navid  
-Front-End Developer
+
 
