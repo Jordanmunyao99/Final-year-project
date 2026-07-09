@@ -890,7 +890,7 @@ const renderSurplus = () => {
     const available = limit + reinvest;
     if (limit > 0) setBudgetConfig(p, { ...cfg, surplus, reinvestmentPool: reinvest, _actualSpending: actual }, false);
     carried = surplus; // carry this month's surplus into next
-    return { p, limit, actual, surplus, reinvest, available };
+    return { p, limit, actual, surplus, income, reinvest, available };
   });
 
   dom.budgetSurplusContent.innerHTML = `
@@ -900,6 +900,7 @@ const renderSurplus = () => {
           <tr>
             <th>Month</th>
             <th>Budget</th>
+            <th>Earned</th>
             <th>Spent</th>
             <th>Surplus</th>
             <th>Carried In</th>
@@ -908,9 +909,10 @@ const renderSurplus = () => {
         </thead>
         <tbody>
           ${rows.map((r) => `
-            <tr>
+             <tr>
               <td>${monthShort(r.p)}</td>
               <td>${r.limit > 0 ? formatCurrency(r.limit) : "—"}</td>
+              <td>${formatCurrency(r.income)}</td>
               <td>${formatCurrency(r.actual)}</td>
               <td class="${r.surplus > 0 ? "color--income" : "color--muted"}">${formatCurrency(r.surplus)}</td>
               <td class="${r.reinvest > 0 ? "color--income" : "color--muted"}">${formatCurrency(r.reinvest)}</td>
