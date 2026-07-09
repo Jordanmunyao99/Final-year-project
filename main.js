@@ -1055,8 +1055,12 @@ const exportSurplusCSV = () => {
     carried = surplus; // carry this month's surplus into next
     return [periodLabel(p), limit > 0 ? limit : "N/A", actual, surplus, reinvest, limit > 0 ? available : "N/A"];
   });
+<<<<<<< HEAD
 
   downloadCSV(`surplus-reinvestment-${selectedYear}.csv`,
+=======
+  downloadCSV("surplus-reinvestment.csv",
+>>>>>>> parent of c2c865a (adding income to csv)
     ["Period", "Budget", "Spent", "Surplus", "Carried In", "Total Available"],
     rows
   );
